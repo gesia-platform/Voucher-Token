@@ -12,29 +12,30 @@ VoucherToken 스마트 컨트랙트는 탄소 상쇄권과 연동된 ERC-1155 �
 
 #### **1. 생성자**
 
-**설명:** 컨트랙트를 초기화하며 토큰 이름, 심볼, 그리고 수수료 관리 컨트랙트 주소를 설정합니다.
+**설명:** 컨트랙트를 초기화하며 토큰의 기본 정보와 수수료 관리 컨트랙트 주소를 설정합니다.
 
- **파라미터:**
+**파라미터**
 
-- `_name` (string): 토큰 이름
-- `_symbol` (string): 토큰 심볼
-- `_feeManager` (address): 수수료 관리자 컨트랙트 주소
+- `_usdtContractAddress` (address) : USDT (Tether) 토큰의 스마트 계약 주소
+- `_operatorManager` (address) : 운영자 권한을 관리하는 스마트 계약의 주소
+- `_whitelistManager` (address) : 화이트리스트 기능을 관리하는 스마트 계약의 주소
+- `_feeManager` (address) : 수수료 정책을 관리하는 스마트 계약의 주소
 
-**로직:**
+**로직**
 
-1. 입력된 `_name`, `_symbol`, `_feeManager`를 설정합니다.
-2. `_tokenIdTracker`를 1로 초기화합니다.
+1. 전달된 `_usdtContractAddress`, `_operatorManager`, `_whitelistManager`, `_feeManager` 값을 각각의 상태 변수에 저장합니다.
 
 ```solidity
 constructor(
-    string memory _name,
-    string memory _symbol,
+    address _usdtContractAddress,
+    address _operatorManager,
+    address _whitelistManager,
     address _feeManager
-) ERC1155("") {
-    name = _name;
-    symbol = _symbol;
+) {
+    usdtContractAddress = _usdtContractAddress;
+    operatorManager = _operatorManager;
+    whitelistManager = _whitelistManager;
     feeManager = _feeManager;
-    _tokenIdTracker.increment(); // Start token ID from 1
 }
 ```
 
@@ -167,16 +168,14 @@ function transferBySignature(
 
 #### 5. `recoverSigner`
 
-**설명**
-
-`recoverSigner` 함수는 서명을 복구하여 서명자가 누구인지 확인하는 데 사용됩니다.
+**설명:** `recoverSigner` 함수는 서명을 복구하여 서명자가 누구인지 확인하는 데 사용됩니다.
 Ethereum에서 서명은 메시지의 무결성을 확인하고 특정 개인(private key)만이 해당 서명을 생성했음을 증명합니다.
 이 함수는 ECDSA(Elliptic Curve Digital Signature Algorithm)를 사용하여 서명에서 서명자의 주소를 복구합니다.
 
 **파라미터**
 
-- `hash`  (bytes32): 서명된 데이터의 해시.
-- `signature` (bytes): 서명 데이터.
+- `hash`  (bytes32): 서명된 데이터의 해시
+- `signature` (bytes): 서명 데이터
 
 **로직**
 
@@ -209,6 +208,229 @@ function recoverSigner(bytes32 hash, bytes memory signature) internal pure retur
 ```
 
 ------
+
+## VoucherTokenMarket 스마트 컨트랙트
+
+------
+
+`VoucherTokenMarket`는 ERC-1155 기반의 바우처 토큰을 거래할 수 있는 스마트 컨트랙트입니다. 이 컨트랙트는 다음과 같은 주요 기능을 제공합니다.
+
+1. 바우처 토큰 판매
+2. 바우처 토큰 판매 취소
+3. USDT 토큰을 통한 바우처 토큰 구매
+
+---
+
+### 함수 목록 및 설명
+
+#### **1. 생성자**
+
+**설명:** 컨트랙트를 초기화하며 토큰의 기본 정보와 수수료 관리 컨트랙트 주소를 설정합니다.
+
+**파라미터**
+
+- `_name` (string) : 토큰 이름
+
+- `_symbol` (string) : 토큰 이름
+
+- `_feeManager` (address) : 수수료 관리자 컨트랙트 주소
+
+**로직**
+
+1. 입력된 `_name`, `_symbol`, `_feeManager`를 설정합니다.
+2. `_tokenIdTracker`를 1로 초기화합니다.
+
+```solidity
+constructor(
+    string memory _name,
+    string memory _symbol,
+    address _feeManager
+) ERC1155("") {
+    name = _name;
+    symbol = _symbol;
+    feeManager = _feeManager;
+    _tokenIdTracker.increment(); // Start token ID from 1
+}
+```
+
+------
+
+#### **2. `verifyVoucherContract`**
+
+**설명:** 운영자 권한으로 판매가 가능하도록 Voucher Contract를 추가합니다.
+
+**파라미터**
+
+- **`_voucherContract` (`address`)**: 검증 등록할 Voucher Contract 주소
+
+**로직**
+
+1. 호출자가 오퍼레이터 권한을 가진지 확인합니다.
+2. `_voucherContract` 주소를 검증된 상태로 변경합니다.
+
+```solidity
+function verifyVoucherContract(address _voucherContract) external operatorsOnly {
+        voucherContractMap[_voucherContract] = true;
+        emit VerificationVoucherContract(_voucherContract, true);
+}
+```
+
+------
+
+### **3. `unVerifyVoucherContract`**
+
+**설명:** 운영자 권한으로 판매가 불가능하도록 Voucher Contract를 추가합니다.
+
+**파라미터**
+
+- **`_voucherContract` (`address`)**: 검증을 해제할 Voucher Contract 주소
+
+**로직**
+
+1. 호출자가 오퍼레이터 권한을 가진지 확인합니다.
+2. `_voucherContract` 주소를 검증 해제된 상태로 변경합니다.
+
+```solidity
+function unVerifyVoucherContract(address _voucherContract) external operatorsOnly {
+        voucherContractMap[_voucherContract] = false;
+        emit VerificationVoucherContract(_voucherContract, false);
+}
+```
+
+------
+
+### **4. `place`**
+
+**설명:** 바우처를 마켓에 등록합니다.
+
+**파라미터**
+
+- `_tokenId` (uint256): 바우처의 토큰 ID
+- `_amount` (uint256): 등록할 바우처 수량
+- `_voucherContract` (address): 바우처 컨트랙트 주소
+- `_perTokenPrice` (uint256): 바우처 1개의 가격 (USDT 단위)
+
+**로직**
+
+1. `voucherContractMap`를 통해 컨트랙트가 검증되었는지 확인합니다.
+2. 등록할 바우처의 수량이 최소 수량 이상인지 확인합니다.
+3. 화이트리스트를 통해 등록자의 자격을 검증합니다.
+4. 바우처의 가격이 최소 가격 이상인지 확인합니다.
+5. 고유한 마켓 ID를 생성하여 `_marketItemMap`에 등록합니다.
+6. ERC1155 바우처 토큰을 컨트랙트로 전송합니다.
+7. `TokenPlaced` 이벤트를 실행합니다.
+
+#### 함수 코드
+
+```solidity
+function place(
+    uint256 _tokenId,
+    uint256 _amount,
+    address _voucherContract,
+    uint256 _perTokenPrice
+) external {
+    require(voucherContractMap[_voucherContract], "Invalid voucher contract");
+    require(_amount >= minVoucherAmount, "Amount below minimum limit");
+    require(IWhitelist(whitelistManager).isWhitelist(_voucherContract, _tokenId, msg.sender), "Not in whitelist");
+    require(_perTokenPrice >= IPrice(_voucherContract).getCarbonPrice(_tokenId), "Price below minimum");
+
+    _marketItemIds.increment();
+    uint256 marketId = _marketItemIds.current();
+
+    _marketItemMap[marketId] = MarketItem(
+        _voucherContract,
+        _tokenId,
+        _amount,
+        _perTokenPrice,
+        msg.sender
+    );
+
+    IERC1155(_voucherContract).safeTransferFrom(msg.sender, address(this), _tokenId, _amount, "");
+    emit TokenPlaced(_voucherContract, marketId, _tokenId, _amount, msg.sender, _perTokenPrice);
+}
+```
+
+---
+
+### 5. `unPlace`
+
+**설명** 마켓에 등록된 바우처를 제거하거나 수량을 줄입니다
+
+**파라미터**
+
+- `_marketId` (uint256): 마켓 상품의 ID.
+- `_amount` (uint256): 제거할 바우처 수량.
+
+**로직**
+
+1. 호출자가 상품의 소유자이거나 오퍼레이터인지 확인합니다.
+2. 제거하려는 수량이 상품에 등록된 수량 이내인지 확인합니다.
+3. 등록된 바우처 수량에서 `_amount`를 차감합니다.
+4. ERC1155 토큰을 호출자에게 반환합니다.
+5. `TokenUnPlaced` 이벤트를 실행합니다.
+
+```solidity
+function unPlace(uint256 _marketId, uint256 _amount) external {
+    require(_amount > 0, "Amount must be greater than zero");
+
+    MarketItem storage marketItem = _marketItemMap[_marketId];
+    require(
+        marketItem.seller == msg.sender || IOperator(operatorManager).isOperator(msg.sender),
+        "Not authorized"
+    );
+    require(marketItem.amount >= _amount, "Insufficient amount");
+
+    marketItem.amount = marketItem.amount.sub(_amount);
+    IERC1155(marketItem.voucherContract).safeTransferFrom(address(this), msg.sender, marketItem.tokenId, _amount, "");
+    emit TokenUnPlaced(marketItem.voucherContract, _marketId, marketItem.tokenId, _amount, marketItem.amount, marketItem.seller, marketItem.price);
+}
+```
+
+------
+
+### 6. `purchaseInUSDT`
+
+**설명** USDT를 사용하여 바우처를 구매합니다.
+
+**파라미터**
+
+- `_marketId` (uint256): 마켓 상품의 ID
+- `_amount` (uint256): 구매할 바우처 수량
+
+**로직**
+
+1. 구매하려는 수량이 최소 수량 이상인지 확인합니다.
+2. 구매자의 화이트리스트 자격을 검증합니다.
+3. 상품에 등록된 바우처 수량이 충분한지 확인합니다.
+4. 구매에 필요한 총 가격과 수수료를 계산합니다.
+5. 구매자가 충분한 USDT를 보유하고 있는지 확인합니다.
+6. 판매자 및 수수료 관리자로 USDT를 전송합니다.
+7. 구매자에게 ERC1155 바우처 토큰을 전송합니다.
+8. `TokenSold` 이벤트를 실행합니다.
+
+```solidity
+function purchaseInUSDT(uint256 _marketId, uint256 _amount) external {
+    require(_amount >= minVoucherAmount, "Amount below minimum limit");
+
+    MarketItem storage marketItem = _marketItemMap[_marketId];
+    require(IWhitelist(whitelistManager).isWhitelist(marketItem.voucherContract, marketItem.tokenId, msg.sender), "Not in whitelist");
+    require(marketItem.amount >= _amount, "Insufficient voucher amount");
+
+    uint256 totalPrice = marketItem.price.mul(_amount);
+    uint256 feeAmount = IFeeManager(feeManager).feeAmount(totalPrice);
+    uint256 remainAmount = totalPrice.sub(feeAmount);
+
+    require(IERC1155(marketItem.voucherContract).balanceOf(address(this), marketItem.tokenId) >= _amount, "Contract has insufficient tokens");
+    require(IERC20(usdtContractAddress).balanceOf(msg.sender) >= totalPrice, "Insufficient USDT balance");
+
+    marketItem.amount = marketItem.amount.sub(_amount);
+    ERC20(usdtContractAddress).safeTransferFrom(msg.sender, marketItem.seller, remainAmount);
+    ERC20(usdtContractAddress).safeTransferFrom(msg.sender, IFeeManager(feeManager).feeAddress(), feeAmount);
+    IERC1155(marketItem.voucherContract).safeTransferFrom(address(this), msg.sender, marketItem.tokenId, _amount, "");
+
+    emit TokenSold(marketItem.voucherContract, _marketId, marketItem.tokenId, _amount, msg.sender, marketItem.price);
+}
+```
 
 ### 핵심 스마트 컨트랙트 관계도
 
